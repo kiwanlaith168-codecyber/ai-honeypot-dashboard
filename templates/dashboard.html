@@ -1,0 +1,1063 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>AI Honeypot SOC — Dashboard v2</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+/*─── Reset ───────────────────────────────────────────────────────────────*/
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:     #060b18;
+  --surf1:  #0d1526;
+  --surf2:  #111e35;
+  --surf3:  #162240;
+  --border: rgba(99,179,237,.12);
+  --blue:   #3b82f6;
+  --blue2:  #60a5fa;
+  --cyan:   #06b6d4;
+  --red:    #ef4444;
+  --orange: #f97316;
+  --green:  #22c55e;
+  --purple: #a855f7;
+  --text:   #e2e8f0;
+  --muted:  #64748b;
+  --sidebar:220px;
+  --glow-b: 0 0 20px rgba(59,130,246,.25);
+  --glow-r: 0 0 20px rgba(239,68,68,.25);
+  --glow-g: 0 0 20px rgba(34,197,94,.2);
+}
+html,body{height:100%;font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text)}
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--surf3);border-radius:2px}
+
+/*─── Layout ──────────────────────────────────────────────────────────────*/
+body{display:flex;overflow:hidden}
+.sidebar{width:var(--sidebar);background:var(--surf1);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;height:100vh;flex-shrink:0;overflow-y:auto}
+.main{flex:1;display:flex;flex-direction:column;height:100vh;overflow:hidden;min-width:0}
+.content{flex:1;overflow-y:auto;padding:20px 22px 28px}
+
+/*─── Sidebar ─────────────────────────────────────────────────────────────*/
+.brand{padding:18px 16px 14px;border-bottom:1px solid var(--border)}
+.brand-icon{font-size:32px;display:block;margin-bottom:6px;
+  filter:drop-shadow(0 0 10px rgba(59,130,246,.5))}
+.brand h2{font-size:13px;font-weight:700;color:#fff;letter-spacing:1.5px;text-transform:uppercase}
+.brand p{font-size:10px;color:var(--muted);margin-top:2px}
+.live-badge{display:inline-flex;align-items:center;gap:5px;
+  background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);
+  color:#86efac;font-size:10px;font-weight:600;padding:3px 8px;border-radius:12px;margin-top:8px}
+.live-dot{width:6px;height:6px;border-radius:50%;background:var(--green);
+  animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.85)}}
+
+.nav-section{padding:10px 8px 4px}
+.nav-label{font-size:10px;font-weight:700;color:var(--muted);letter-spacing:1.5px;
+  text-transform:uppercase;padding:0 8px;margin-bottom:4px}
+.nav-item{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;
+  cursor:pointer;font-size:12px;font-weight:500;color:var(--muted);transition:all .15s;
+  text-decoration:none}
+.nav-item:hover,.nav-item.active{background:rgba(59,130,246,.12);color:var(--blue2)}
+.nav-item .icon{font-size:15px;width:18px;text-align:center;flex-shrink:0}
+.nav-badge{margin-left:auto;background:var(--red);color:#fff;font-size:9px;
+  font-weight:700;padding:1px 5px;border-radius:8px;min-width:16px;text-align:center}
+
+.sidebar-footer{margin-top:auto;padding:12px 14px;border-top:1px solid var(--border)}
+.sidebar-footer .user{font-size:11px;color:var(--muted);margin-bottom:4px}
+.sidebar-footer a{color:var(--red);text-decoration:none;font-size:11px;font-weight:600}
+
+/*─── Topbar ──────────────────────────────────────────────────────────────*/
+.topbar{background:var(--surf1);border-bottom:1px solid var(--border);
+  padding:10px 22px;display:flex;align-items:center;gap:12px;flex-shrink:0}
+.topbar h1{font-size:14px;font-weight:700;flex:1;display:flex;align-items:center;gap:8px}
+.topbar h1 .version{font-size:10px;background:rgba(59,130,246,.2);color:var(--blue2);
+  padding:2px 6px;border-radius:4px;font-weight:600;letter-spacing:.5px}
+#live-clock{font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace}
+.btn{padding:6px 12px;border:none;border-radius:6px;font-size:11px;font-weight:600;
+  cursor:pointer;transition:all .15s;letter-spacing:.3px}
+.btn-primary{background:var(--blue);color:#fff}
+.btn-primary:hover{background:var(--blue2)}
+.btn-outline{background:transparent;color:var(--text);border:1px solid var(--border)}
+.btn-outline:hover{background:var(--surf2)}
+.btn-danger{background:rgba(239,68,68,.1);color:#fca5a5;border:1px solid rgba(239,68,68,.25)}
+.btn-danger:hover{background:rgba(239,68,68,.2)}
+
+/*─── Live Ticker ─────────────────────────────────────────────────────────*/
+.ticker-bar{background:var(--surf2);border-bottom:1px solid var(--border);
+  padding:6px 22px;display:flex;align-items:center;gap:10px;flex-shrink:0;overflow:hidden}
+.ticker-label{font-size:10px;font-weight:700;color:var(--cyan);
+  letter-spacing:1px;text-transform:uppercase;flex-shrink:0}
+.ticker-track{flex:1;overflow:hidden;position:relative;height:18px}
+.ticker-inner{display:flex;gap:28px;animation:tickerScroll 40s linear infinite;width:max-content}
+.ticker-inner:hover{animation-play-state:paused}
+.ticker-evt{font-size:10px;color:var(--muted);white-space:nowrap;font-family:'JetBrains Mono',monospace}
+.ticker-evt.high{color:var(--red)}
+.ticker-evt.medium{color:var(--orange)}
+.ticker-evt.conn{color:var(--cyan)}
+@keyframes tickerScroll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+
+/*─── KPI Cards ───────────────────────────────────────────────────────────*/
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));
+  gap:12px;margin-bottom:18px}
+.kpi{background:var(--surf1);border:1px solid var(--border);border-radius:12px;
+  padding:14px 16px;position:relative;overflow:hidden;cursor:default;transition:transform .2s}
+.kpi:hover{transform:translateY(-2px)}
+.kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;border-radius:12px 12px 0 0}
+.kpi.blue::before{background:linear-gradient(90deg,var(--blue),var(--cyan))}
+.kpi.red::before{background:var(--red)}
+.kpi.orange::before{background:var(--orange)}
+.kpi.green::before{background:var(--green)}
+.kpi.purple::before{background:var(--purple)}
+.kpi.cyan::before{background:var(--cyan)}
+.kpi-icon{position:absolute;top:12px;right:14px;font-size:22px;opacity:.2}
+.kpi-label{font-size:10px;font-weight:600;color:var(--muted);
+  letter-spacing:.8px;text-transform:uppercase;margin-bottom:6px}
+.kpi-value{font-size:26px;font-weight:800;color:#fff;line-height:1;
+  font-family:'JetBrains Mono',monospace}
+.kpi-sub{font-size:10px;color:var(--muted);margin-top:4px}
+
+/*─── Panel ───────────────────────────────────────────────────────────────*/
+.panel{background:var(--surf1);border:1px solid var(--border);border-radius:12px;
+  overflow:hidden;margin-bottom:16px}
+.panel-header{padding:12px 16px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;gap:8px}
+.panel-header h3{font-size:13px;font-weight:700;display:flex;align-items:center;gap:6px}
+.panel-body{padding:14px 16px}
+.no-pad{padding:0}
+
+/*─── Grid ────────────────────────────────────────────────────────────────*/
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+@media(max-width:1200px){.g2,.g3{grid-template-columns:1fr}}
+
+/*─── Risk Gauge ──────────────────────────────────────────────────────────*/
+.gauge-wrap{display:flex;flex-direction:column;align-items:center;padding:14px 0 8px}
+.gauge-svg{width:160px;height:90px}
+.gauge-label{font-size:22px;font-weight:800;font-family:'JetBrains Mono',monospace;
+  margin-top:-4px;text-align:center}
+.gauge-sub{font-size:11px;color:var(--muted);text-align:center;margin-top:2px}
+
+/*─── Map ─────────────────────────────────────────────────────────────────*/
+#attack-map{height:340px;border-radius:0 0 12px 12px}
+
+/*─── Table ───────────────────────────────────────────────────────────────*/
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:11px}
+th{background:var(--surf2);color:var(--muted);text-align:left;padding:9px 12px;
+  font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;
+  border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:9px 12px;border-bottom:1px solid var(--border);vertical-align:middle;
+  color:var(--text);white-space:nowrap}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(59,130,246,.04)}
+.mono{font-family:'JetBrains Mono',monospace;font-size:10px}
+.cmd-cell{max-width:240px;overflow:hidden;text-overflow:ellipsis;
+  font-family:'JetBrains Mono',monospace;font-size:10px}
+
+/*─── Badges ──────────────────────────────────────────────────────────────*/
+.risk{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;
+  border-radius:4px;font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase}
+.risk-high  {background:rgba(239,68,68,.15);color:#fca5a5;border:1px solid rgba(239,68,68,.3)}
+.risk-medium{background:rgba(249,115,22,.15);color:#fdba74;border:1px solid rgba(249,115,22,.3)}
+.risk-low   {background:rgba(34,197,94,.12);color:#86efac;border:1px solid rgba(34,197,94,.25)}
+
+.type-badge{display:inline-block;padding:2px 6px;border-radius:3px;font-size:9px;
+  font-weight:600;letter-spacing:.3px;text-transform:uppercase}
+.type-recon         {background:rgba(6,182,212,.1);color:#67e8f9;border:1px solid rgba(6,182,212,.25)}
+.type-brute_force   {background:rgba(249,115,22,.1);color:#fdba74;border:1px solid rgba(249,115,22,.25)}
+.type-privilege_escalation{background:rgba(239,68,68,.1);color:#fca5a5;border:1px solid rgba(239,68,68,.25)}
+.type-malware_download    {background:rgba(168,85,247,.1);color:#d8b4fe;border:1px solid rgba(168,85,247,.25)}
+.type-lateral_movement    {background:rgba(59,130,246,.1);color:#93c5fd;border:1px solid rgba(59,130,246,.25)}
+.type-data_exfiltration   {background:rgba(239,68,68,.15);color:#fca5a5;border:1px solid rgba(239,68,68,.3)}
+.type-persistence         {background:rgba(234,179,8,.1);color:#fde68a;border:1px solid rgba(234,179,8,.25)}
+.type-unknown       {background:rgba(100,116,139,.1);color:#94a3b8;border:1px solid rgba(100,116,139,.25)}
+
+.profile-badge{display:inline-block;padding:2px 6px;border-radius:3px;font-size:9px;font-weight:600;text-transform:uppercase}
+.profile-automated_bot      {background:rgba(239,68,68,.12);color:#fca5a5;border:1px solid rgba(239,68,68,.3)}
+.profile-script_kiddie      {background:rgba(249,115,22,.12);color:#fdba74;border:1px solid rgba(249,115,22,.3)}
+.profile-experienced_human  {background:rgba(168,85,247,.12);color:#d8b4fe;border:1px solid rgba(168,85,247,.3)}
+.profile-unknown            {background:rgba(100,116,139,.1);color:#94a3b8;border:1px solid rgba(100,116,139,.25)}
+
+/*─── Alert items ─────────────────────────────────────────────────────────*/
+.alert-list{display:flex;flex-direction:column;gap:0}
+.alert-item{padding:10px 0;border-bottom:1px solid var(--border);
+  display:flex;align-items:flex-start;gap:10px}
+.alert-item:last-child{border-bottom:none}
+.alert-dot{width:7px;height:7px;border-radius:50%;margin-top:4px;flex-shrink:0}
+.alert-dot.high{background:var(--red);box-shadow:0 0 6px var(--red)}
+.alert-dot.medium{background:var(--orange)}
+.alert-dot.live{background:var(--cyan);animation:pulse 1s infinite}
+.alert-body{flex:1;min-width:0}
+.alert-title{font-size:11px;font-weight:600;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.alert-meta{font-size:10px;color:var(--muted);margin-top:2px}
+.live-tag{background:rgba(6,182,212,.15);color:var(--cyan);border:1px solid rgba(6,182,212,.3);
+  font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;letter-spacing:.5px}
+
+/*─── Country list ────────────────────────────────────────────────────────*/
+.country-row{display:flex;align-items:center;gap:8px;padding:5px 0;
+  border-bottom:1px solid var(--border);font-size:11px}
+.country-row:last-child{border-bottom:none}
+.country-bar-wrap{flex:1;height:4px;background:var(--surf3);border-radius:2px;overflow:hidden}
+.country-bar{height:100%;background:linear-gradient(90deg,var(--blue),var(--cyan));
+  border-radius:2px;transition:width .6s}
+.flag{font-size:16px;flex-shrink:0}
+
+/*─── Chart canvases ──────────────────────────────────────────────────────*/
+.chart-container{position:relative;height:200px}
+
+/*─── Command color classes ───────────────────────────────────────────────*/
+.cmd-recon          {color:#67e8f9}
+.cmd-brute_force    {color:#fdba74}
+.cmd-privilege_escalation{color:#fca5a5}
+.cmd-malware_download    {color:#d8b4fe}
+.cmd-persistence    {color:#fde68a}
+.cmd-lateral_movement    {color:#93c5fd}
+.cmd-data_exfiltration   {color:#fca5a5}
+.cmd-unknown        {color:#94a3b8}
+
+/*─── Modal ───────────────────────────────────────────────────────────────*/
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);
+  z-index:9999;align-items:center;justify-content:center}
+.modal-overlay.show{display:flex}
+.modal{background:var(--surf1);border:1px solid var(--border);border-radius:16px;
+  width:min(880px,95vw);max-height:90vh;overflow:hidden;display:flex;flex-direction:column;
+  box-shadow:0 24px 64px rgba(0,0,0,.6)}
+.modal-header{padding:16px 20px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between}
+.modal-header h3{font-size:14px;font-weight:700}
+.modal-close{background:transparent;border:none;color:var(--muted);font-size:20px;
+  cursor:pointer;padding:2px 6px;border-radius:4px;transition:all .15s}
+.modal-close:hover{background:var(--surf2);color:var(--text)}
+.modal-body{overflow-y:auto;padding:18px 20px;flex:1}
+
+.modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+.modal-card{background:var(--surf2);border:1px solid var(--border);
+  border-radius:8px;padding:12px 14px}
+.modal-card-label{font-size:10px;font-weight:700;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px}
+.modal-card-value{font-size:13px;font-weight:600}
+
+.ai-narrative{background:var(--surf2);border:1px solid rgba(59,130,246,.2);
+  border-radius:8px;padding:14px 16px;margin-bottom:14px;
+  font-size:12px;line-height:1.7;color:#cbd5e1;
+  border-left:3px solid var(--blue)}
+.ai-narrative-label{font-size:10px;font-weight:700;color:var(--blue2);
+  text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;
+  display:flex;align-items:center;gap:6px}
+
+.evidence-list{margin-bottom:14px}
+.evidence-item{display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);
+  font-size:11px;color:#94a3b8}
+.evidence-item:last-child{border-bottom:none}
+.evidence-item::before{content:"◈";color:var(--cyan);flex-shrink:0;margin-top:1px}
+
+.rec-list{background:var(--surf2);border-radius:8px;padding:12px 14px}
+.rec-item{padding:6px 0;border-bottom:1px solid var(--border);font-size:11px;
+  line-height:1.6;color:#94a3b8}
+.rec-item:last-child{border-bottom:none}
+.rec-item strong{color:var(--text)}
+
+.cmd-replay{background:var(--bg);border:1px solid var(--border);border-radius:8px;
+  padding:10px 12px;max-height:200px;overflow-y:auto}
+.cmd-replay-line{font-family:'JetBrains Mono',monospace;font-size:10px;
+  padding:2px 0;line-height:1.5}
+.cmd-prompt{color:var(--green)}
+
+/*─── Live feed panel ─────────────────────────────────────────────────────*/
+.live-feed{max-height:280px;overflow-y:auto;display:flex;flex-direction:column-reverse}
+.live-evt{display:flex;align-items:flex-start;gap:8px;padding:6px 0;
+  border-bottom:1px solid var(--border);font-size:10px;animation:fadeIn .3s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.live-evt:last-child{border-bottom:none}
+.live-evt-type{padding:2px 5px;border-radius:3px;font-size:8px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.5px;flex-shrink:0;margin-top:1px}
+.ltype-command{background:rgba(59,130,246,.15);color:var(--blue2)}
+.ltype-alert  {background:rgba(239,68,68,.15);color:#fca5a5}
+.ltype-conn   {background:rgba(6,182,212,.12);color:var(--cyan)}
+.ltype-end    {background:rgba(100,116,139,.15);color:#94a3b8}
+.live-evt-body{flex:1;min-width:0}
+.live-evt-cmd {font-family:'JetBrains Mono',monospace;color:var(--text);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.live-evt-meta{color:var(--muted);margin-top:1px}
+.score-pill{background:rgba(239,68,68,.15);color:#fca5a5;border:1px solid rgba(239,68,68,.25);
+  padding:1px 5px;border-radius:3px;font-size:8px;font-weight:700;margin-left:4px}
+.score-pill.med{background:rgba(249,115,22,.12);color:#fdba74;border-color:rgba(249,115,22,.25)}
+.score-pill.low{background:rgba(34,197,94,.1);color:#86efac;border-color:rgba(34,197,94,.2)}
+
+/*─── Empty ───────────────────────────────────────────────────────────────*/
+.empty{text-align:center;padding:28px;color:var(--muted);font-size:12px}
+.empty .ei{font-size:32px;margin-bottom:8px}
+
+/*─── Toast ───────────────────────────────────────────────────────────────*/
+#toasts{position:fixed;top:14px;right:14px;z-index:99999;
+  display:flex;flex-direction:column;gap:8px}
+.toast{background:var(--surf2);border:1px solid var(--border);
+  border-left:3px solid var(--blue);padding:10px 14px;border-radius:8px;
+  font-size:11px;min-width:240px;max-width:320px;
+  box-shadow:0 8px 24px rgba(0,0,0,.5);animation:toastIn .3s ease}
+.toast.err{border-left-color:var(--red)}
+.toast.ok{border-left-color:var(--green)}
+.toast.warn{border-left-color:var(--orange)}
+@keyframes toastIn{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:none}}
+
+/*─── Stat separator ──────────────────────────────────────────────────────*/
+.section-title{font-size:11px;font-weight:700;color:var(--muted);
+  text-transform:uppercase;letter-spacing:1.2px;margin-bottom:12px;
+  display:flex;align-items:center;gap:8px}
+.section-title::after{content:'';flex:1;height:1px;background:var(--border)}
+</style>
+</head>
+<body>
+
+<!--══════════════════════════════════════ SIDEBAR ══════════════════-->
+<aside class="sidebar">
+  <div class="brand">
+    <span class="brand-icon">🍯</span>
+    <h2>AI Honeypot</h2>
+    <p>SOC Dashboard v2.0</p>
+    <div class="live-badge"><span class="live-dot"></span>LIVE MONITORING</div>
+  </div>
+  <nav>
+    <div class="nav-section">
+      <p class="nav-label">Overview</p>
+      <a class="nav-item active" onclick="goto('sec-overview')"><span class="icon">📊</span>Dashboard</a>
+      <a class="nav-item" onclick="goto('sec-live')"><span class="icon">⚡</span>Live Feed</a>
+      <a class="nav-item" onclick="goto('sec-map')"><span class="icon">🌍</span>Attack Map</a>
+    </div>
+    <div class="nav-section">
+      <p class="nav-label">Intelligence</p>
+      <a class="nav-item" onclick="goto('sec-sessions')"><span class="icon">💻</span>Sessions</a>
+      <a class="nav-item" onclick="goto('sec-commands')"><span class="icon">⌨️</span>Commands</a>
+      <a class="nav-item" onclick="goto('sec-alerts')">
+        <span class="icon">🚨</span>Alerts
+        <span class="nav-badge" id="nav-alerts">0</span>
+      </a>
+    </div>
+    <div class="nav-section">
+      <p class="nav-label">Analysis</p>
+      <a class="nav-item" onclick="goto('sec-countries')"><span class="icon">🏳️</span>Countries</a>
+      <a class="nav-item" onclick="goto('sec-attackers')"><span class="icon">🎯</span>Attackers</a>
+    </div>
+    <div class="nav-section">
+      <p class="nav-label">Reports</p>
+      <a class="nav-item" onclick="generateReport()"><span class="icon">📄</span>Generate PDF</a>
+    </div>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="user">👤 <strong>admin</strong></div>
+    <a href="/logout">🔓 Logout</a>
+  </div>
+</aside>
+
+<!--══════════════════════════════════════ MAIN ══════════════════════-->
+<main class="main">
+  <!--── Topbar ──────────────────────────────────────────────────────-->
+  <div class="topbar">
+    <h1>🛡️ Security Operations Center <span class="version">v2.0</span></h1>
+    <span id="live-clock"></span>
+    <button class="btn btn-outline" onclick="refreshAll()">↻ Refresh</button>
+    <button class="btn btn-primary" onclick="generateReport()">📄 PDF Report</button>
+    <button class="btn btn-danger" onclick="location.href='/logout'">🔓 Logout</button>
+  </div>
+
+  <!--── Live Ticker ─────────────────────────────────────────────────-->
+  <div class="ticker-bar">
+    <span class="ticker-label">⚡ LIVE</span>
+    <div class="ticker-track">
+      <div class="ticker-inner" id="ticker-inner">
+        <span class="ticker-evt conn">System initializing…</span>
+      </div>
+    </div>
+  </div>
+
+  <!--── Content ─────────────────────────────────────────────────────-->
+  <div class="content">
+
+    <!-- ── KPI CARDS ────────────────────────────────────────────── -->
+    <div id="sec-overview"></div>
+    <div class="kpi-grid">
+      <div class="kpi blue"><div class="kpi-icon">💻</div>
+        <div class="kpi-label">Total Sessions</div>
+        <div class="kpi-value" id="kpi-total">—</div>
+        <div class="kpi-sub">all-time connections</div></div>
+      <div class="kpi cyan"><div class="kpi-icon">🌐</div>
+        <div class="kpi-label">Unique IPs</div>
+        <div class="kpi-value" id="kpi-ips">—</div>
+        <div class="kpi-sub">distinct attackers</div></div>
+      <div class="kpi green"><div class="kpi-icon">🏳️</div>
+        <div class="kpi-label">Countries</div>
+        <div class="kpi-value" id="kpi-countries">—</div>
+        <div class="kpi-sub">origins mapped</div></div>
+      <div class="kpi red"><div class="kpi-icon">🔴</div>
+        <div class="kpi-label">High Risk</div>
+        <div class="kpi-value" id="kpi-high">—</div>
+        <div class="kpi-sub">critical sessions</div></div>
+      <div class="kpi orange"><div class="kpi-icon">🤖</div>
+        <div class="kpi-label">Bots Detected</div>
+        <div class="kpi-value" id="kpi-bots">—</div>
+        <div class="kpi-sub">automated attackers</div></div>
+      <div class="kpi purple"><div class="kpi-icon">🚨</div>
+        <div class="kpi-label">Unread Alerts</div>
+        <div class="kpi-value" id="kpi-alerts">—</div>
+        <div class="kpi-sub">pending review</div></div>
+    </div>
+
+    <!-- ── RISK GAUGE + CHARTS ROW ─────────────────────────────── -->
+    <div class="g3">
+      <!-- Risk gauge -->
+      <div class="panel">
+        <div class="panel-header"><h3>⚠️ System Threat Level</h3></div>
+        <div class="panel-body" style="padding:8px">
+          <div class="gauge-wrap">
+            <svg class="gauge-svg" viewBox="0 0 160 90">
+              <path d="M 20 80 A 60 60 0 0 1 140 80" stroke="#1e293b" stroke-width="12" fill="none" stroke-linecap="round"/>
+              <path id="gauge-arc" d="M 20 80 A 60 60 0 0 1 140 80" stroke="var(--green)" stroke-width="12" fill="none"
+                    stroke-linecap="round" stroke-dasharray="188" stroke-dashoffset="188" style="transition:all 1s"/>
+              <text x="80" y="75" text-anchor="middle" fill="#64748b" font-size="9" font-family="Inter">THREAT</text>
+            </svg>
+            <div class="gauge-label" id="gauge-label" style="color:var(--green)">LOW</div>
+            <div class="gauge-sub" id="gauge-sub">System nominal</div>
+          </div>
+          <div style="display:flex;justify-content:space-around;margin-top:8px">
+            <div style="text-align:center"><div style="font-size:18px;font-weight:800;color:#fff" id="g-active">—</div><div style="font-size:9px;color:var(--muted)">ACTIVE</div></div>
+            <div style="text-align:center"><div style="font-size:18px;font-weight:800;color:#fff" id="g-total-cmd">—</div><div style="font-size:9px;color:var(--muted)">COMMANDS</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Timeline chart -->
+      <div class="panel">
+        <div class="panel-header"><h3>📈 7-Day Attack Timeline</h3></div>
+        <div class="panel-body">
+          <div class="chart-container"><canvas id="chart-timeline"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Attack types doughnut -->
+      <div class="panel">
+        <div class="panel-header"><h3>⚔️ Attack Types</h3></div>
+        <div class="panel-body">
+          <div class="chart-container"><canvas id="chart-types"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── ATTACKER PROFILE + ATTACK PHASE CHARTS ─────────────── -->
+    <div class="g2">
+      <div class="panel">
+        <div class="panel-header"><h3>🤖 Attacker Profiles</h3>
+          <span style="font-size:10px;color:var(--muted)">bot / human / script</span></div>
+        <div class="panel-body">
+          <div class="chart-container" style="height:160px"><canvas id="chart-profiles"></canvas></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><h3>🎯 Attack Phases</h3>
+          <span style="font-size:10px;color:var(--muted)">recon → exploit → post</span></div>
+        <div class="panel-body">
+          <div class="chart-container" style="height:160px"><canvas id="chart-phases"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── LIVE FEED ────────────────────────────────────────────── -->
+    <div id="sec-live"></div>
+    <div class="panel">
+      <div class="panel-header">
+        <h3>⚡ Real-Time Event Feed</h3>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="live-badge" style="margin:0"><span class="live-dot"></span>STREAMING</span>
+          <button class="btn btn-outline" style="font-size:10px;padding:4px 8px" onclick="clearFeed()">Clear</button>
+        </div>
+      </div>
+      <div class="panel-body no-pad" style="padding:0 14px">
+        <div class="live-feed" id="live-feed">
+          <div class="empty"><div class="ei">⚡</div>Waiting for connections…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── ATTACK MAP ───────────────────────────────────────────── -->
+    <div id="sec-map"></div>
+    <div class="panel">
+      <div class="panel-header">
+        <h3>🌍 Global Attack Origin Map</h3>
+        <span style="font-size:10px;color:var(--muted)">🔴 High  🟠 Medium  🟢 Low  🟡 Jordan</span>
+      </div>
+      <div id="attack-map"></div>
+    </div>
+
+    <!-- ── SESSIONS + COUNTRIES ─────────────────────────────────── -->
+    <div class="g2" id="sec-sessions">
+      <div class="panel">
+        <div class="panel-header">
+          <h3>🖥️ Recent Sessions</h3>
+          <span id="sess-count" style="font-size:10px;color:var(--muted)"></span>
+        </div>
+        <div class="tbl-wrap" style="max-height:320px;overflow-y:auto">
+          <table>
+            <thead><tr><th>IP</th><th>Country</th><th>Profile</th><th>Phase</th><th>Risk</th><th>Cmds</th><th>Time</th><th></th></tr></thead>
+            <tbody id="tbl-sessions"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="panel" id="sec-countries">
+        <div class="panel-header"><h3>🏳️ Top Origin Countries</h3></div>
+        <div class="panel-body" style="max-height:320px;overflow-y:auto">
+          <div id="countries-list"><div class="empty"><div style="font-size:20px">🌍</div>Loading…</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── ALERTS ──────────────────────────────────────────────── -->
+    <div class="panel" id="sec-alerts">
+      <div class="panel-header">
+        <h3>🚨 Recent Alerts</h3>
+        <button class="btn btn-outline" style="font-size:10px;padding:4px 8px" onclick="loadAlerts()">Refresh</button>
+      </div>
+      <div class="panel-body">
+        <div class="alert-list" id="alerts-panel">
+          <div class="empty"><div class="ei">✅</div>No alerts yet</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── COMMAND LOG ─────────────────────────────────────────── -->
+    <div class="panel" id="sec-commands">
+      <div class="panel-header">
+        <h3>⌨️ Command Log <span style="font-size:10px;color:var(--muted);font-weight:400">(color-coded by attack type)</span></h3>
+        <button class="btn btn-outline" style="font-size:10px;padding:4px 8px" onclick="loadCommands()">Load</button>
+      </div>
+      <div class="tbl-wrap" style="max-height:300px;overflow-y:auto">
+        <table>
+          <thead><tr><th>IP</th><th>Country</th><th>Command</th><th>Type</th><th>Time</th></tr></thead>
+          <tbody id="tbl-commands">
+            <tr><td colspan="5" class="empty"><div class="ei">⌨️</div>Click Load to view commands</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── TOP ATTACKERS ───────────────────────────────────────── -->
+    <div class="panel" id="sec-attackers" style="margin-bottom:28px">
+      <div class="panel-header"><h3>🎯 Top Attackers</h3></div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>#</th><th>IP</th><th>Country</th><th>Profile</th><th>Sessions</th><th>Cmds</th><th>Max Risk</th></tr></thead>
+          <tbody id="tbl-attackers"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</main>
+
+<!--══════════════════════════════════════ SESSION MODAL ═════════════-->
+<div class="modal-overlay" id="session-modal" onclick="closeModal(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modal-title">Session Detail</h3>
+      <button class="modal-close" onclick="document.getElementById('session-modal').classList.remove('show')">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body">
+      <div class="empty"><div class="ei">⏳</div>Loading session…</div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div id="toasts"></div>
+
+<!--══════════════════════════════════════ SCRIPTS ═══════════════════-->
+<script>
+// ─── Utilities ───────────────────────────────────────────────────────────────
+const qs = id => document.getElementById(id);
+function goto(id){ qs(id)?.scrollIntoView({behavior:'smooth'}) }
+
+function toast(msg, type='info', dur=4000){
+  const el = document.createElement('div');
+  el.className = `toast ${type==='error'?'err':type==='success'?'ok':type==='warn'?'warn':''}`;
+  el.textContent = msg;
+  qs('toasts').appendChild(el);
+  setTimeout(()=>el.remove(), dur);
+}
+
+function relTime(iso){
+  if(!iso) return '—';
+  const d = new Date(iso.endsWith('Z')?iso:iso+'Z');
+  const s = Math.floor((Date.now()-d)/1000);
+  if(s<60) return `${s}s ago`;
+  if(s<3600) return `${Math.floor(s/60)}m ago`;
+  return d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+}
+
+function escHtml(s){
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function riskBadge(r){
+  const l=(r||'Low').toLowerCase();
+  return `<span class="risk risk-${l}">${r||'Low'}</span>`;
+}
+
+function typeBadge(t){
+  if(!t) return '';
+  const clean=t.toLowerCase().replace(/\s+/g,'_');
+  return `<span class="type-badge type-${clean}">${(t||'').replace(/_/g,' ')}</span>`;
+}
+
+function profileBadge(p){
+  if(!p||p==='unknown') return `<span class="profile-badge profile-unknown">unknown</span>`;
+  return `<span class="profile-badge profile-${p.toLowerCase()}">${p.replace(/_/g,' ')}</span>`;
+}
+
+function flagEmoji(code){
+  if(!code||code==='XX') return '🏴';
+  const o=0x1F1E6-65;
+  return String.fromCodePoint(...[...code.toUpperCase()].map(c=>c.charCodeAt(0)+o));
+}
+
+// ─── Clock ────────────────────────────────────────────────────────────────────
+function updateClock(){
+  qs('live-clock').textContent = new Date().toLocaleString('en-GB',{hour12:false});
+}
+setInterval(updateClock,1000); updateClock();
+
+// ─── Gauge ────────────────────────────────────────────────────────────────────
+function updateGauge(high, medium, total){
+  const ratio = total===0 ? 0 : (high*3+medium)/(total*3);
+  const pct   = Math.min(ratio,1);
+  const offset = 188*(1-pct);
+  const arc = qs('gauge-arc');
+  const label = qs('gauge-label');
+  const sub   = qs('gauge-sub');
+  arc.style.strokeDashoffset = offset;
+  if(pct>0.5){arc.style.stroke='var(--red)';label.style.color='var(--red)';label.textContent='HIGH';sub.textContent='Critical activity detected';}
+  else if(pct>0.2){arc.style.stroke='var(--orange)';label.style.color='var(--orange)';label.textContent='MEDIUM';sub.textContent='Elevated threat activity';}
+  else{arc.style.stroke='var(--green)';label.style.color='var(--green)';label.textContent='LOW';sub.textContent='System nominal';}
+}
+
+// ─── KPI Stats ────────────────────────────────────────────────────────────────
+async function loadStats(){
+  const d = await (await fetch('/api/stats')).json();
+  qs('kpi-total').textContent    = d.total_sessions??'0';
+  qs('kpi-ips').textContent      = d.unique_ips??'0';
+  qs('kpi-countries').textContent= d.countries??'0';
+  qs('kpi-high').textContent     = d.high_risk??'0';
+  qs('kpi-bots').textContent     = d.bots_detected??'0';
+  qs('kpi-alerts').textContent   = d.unread_alerts??'0';
+  qs('nav-alerts').textContent   = d.unread_alerts??'0';
+  qs('g-active').textContent     = d.active_sessions??'0';
+  qs('g-total-cmd').textContent  = d.total_commands??'0';
+  updateGauge(d.high_risk||0, d.medium_risk||0, d.total_sessions||0);
+}
+
+// ─── Sessions ────────────────────────────────────────────────────────────────
+async function loadSessions(){
+  const rows = await (await fetch('/api/sessions?limit=50')).json();
+  qs('sess-count').textContent = `${rows.length} sessions`;
+  const tb = qs('tbl-sessions');
+  if(!rows.length){tb.innerHTML=`<tr><td colspan="8" class="empty">No sessions yet</td></tr>`;return;}
+  tb.innerHTML = rows.map(s=>`
+    <tr>
+      <td class="mono">${s.ip_address}</td>
+      <td>${flagEmoji(s.country_code)} ${s.country||'—'}</td>
+      <td>${profileBadge(s.attacker_type||s.ai_attacker_type)}</td>
+      <td style="font-size:10px;color:var(--muted)">${(s.attack_phase||s.ai_attack_phase||'—').replace(/_/g,' ')}</td>
+      <td>${riskBadge(s.risk_level)}</td>
+      <td style="text-align:center">${s.cmd_count||0}</td>
+      <td style="font-size:10px;color:var(--muted)">${relTime(s.start_time)}</td>
+      <td><button onclick="openSession(${s.id})" class="btn btn-outline" style="font-size:10px;padding:3px 7px">Detail</button></td>
+    </tr>`).join('');
+}
+
+// ─── Countries ───────────────────────────────────────────────────────────────
+async function loadCountries(){
+  const data = await (await fetch('/api/countries')).json();
+  const el = qs('countries-list');
+  if(!data.length){el.innerHTML='<div class="empty">No data</div>';return;}
+  const max = data[0].cnt;
+  el.innerHTML = data.slice(0,15).map(c=>`
+    <div class="country-row">
+      <span class="flag">${flagEmoji(c.country_code)}</span>
+      <span style="width:90px;font-size:11px;overflow:hidden;text-overflow:ellipsis">${c.country}</span>
+      <div class="country-bar-wrap"><div class="country-bar" style="width:${Math.round(100*c.cnt/max)}%"></div></div>
+      <span class="mono" style="min-width:24px;text-align:right;font-weight:700">${c.cnt}</span>
+    </div>`).join('');
+}
+
+// ─── Alerts ───────────────────────────────────────────────────────────────────
+async function loadAlerts(){
+  const data = await (await fetch('/api/alerts?limit=20')).json();
+  const el = qs('alerts-panel');
+  if(!data.length){el.innerHTML='<div class="empty"><div class="ei">✅</div>No alerts — system quiet</div>';return;}
+  el.innerHTML = data.map(a=>`
+    <div class="alert-item">
+      <div class="alert-dot ${a.is_live?'live':(a.risk_level==='High'?'high':'medium')}"></div>
+      <div class="alert-body">
+        <div class="alert-title">
+          ${riskBadge(a.risk_level)}
+          ${a.is_live?'<span class="live-tag">LIVE</span>':''}
+          <strong>${a.ip_address}</strong>
+          <span style="color:var(--muted);font-weight:400">· ${a.country||'Unknown'}</span>
+        </div>
+        <div class="alert-meta">
+          ${typeBadge(a.attack_type)} · ${relTime(a.sent_at)}
+          ${!a.acknowledged?`<button onclick="ackAlert(${a.id},this)" class="btn btn-outline" style="font-size:9px;padding:2px 5px;margin-left:6px">Dismiss</button>`:'<span style="color:var(--green);margin-left:6px">✔</span>'}
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+async function ackAlert(id,btn){
+  await fetch(`/api/alerts/${id}/ack`,{method:'POST'});
+  btn.closest('.alert-item').style.opacity='0.4';
+  btn.textContent='✔'; btn.disabled=true;
+  loadStats();
+}
+
+// ─── Commands ────────────────────────────────────────────────────────────────
+async function loadCommands(){
+  const tb = qs('tbl-commands');
+  tb.innerHTML=`<tr><td colspan="5" class="empty">Loading…</td></tr>`;
+  const rows = await (await fetch('/api/commands?per_page=100')).json();
+  if(!rows.length){tb.innerHTML=`<tr><td colspan="5" class="empty">No commands yet</td></tr>`;return;}
+  tb.innerHTML = rows.map(c=>{
+    let types=[];
+    try{types=JSON.parse(c.attack_types||'[]')}catch(e){}
+    const t0 = types[0]||'unknown';
+    return `<tr>
+      <td class="mono">${c.ip_address}</td>
+      <td style="font-size:10px">${c.country||'—'}</td>
+      <td class="cmd-cell cmd-${t0}">${escHtml(c.command)}</td>
+      <td>${typeBadge(t0)}</td>
+      <td style="font-size:10px;color:var(--muted)">${relTime(c.timestamp)}</td>
+    </tr>`;}).join('');
+}
+
+// ─── Top Attackers ────────────────────────────────────────────────────────────
+async function loadTopAttackers(){
+  const rows = await (await fetch('/api/top_attackers?limit=10')).json();
+  const tb = qs('tbl-attackers');
+  if(!rows.length){tb.innerHTML=`<tr><td colspan="7" class="empty">No data</td></tr>`;return;}
+  tb.innerHTML = rows.map((a,i)=>`
+    <tr>
+      <td style="color:var(--muted);font-weight:700">${i+1}</td>
+      <td class="mono">${a.ip_address}</td>
+      <td>${flagEmoji(a.country_code)} ${a.country||'Unknown'}</td>
+      <td>${profileBadge(a.attacker_type)}</td>
+      <td style="text-align:center;font-weight:700">${a.sessions}</td>
+      <td style="text-align:center">${a.total_cmds||0}</td>
+      <td>${riskBadge(a.max_risk)}</td>
+    </tr>`).join('');
+}
+
+// ─── Charts ───────────────────────────────────────────────────────────────────
+const CHART_OPTS = {
+  plugins:{legend:{labels:{color:'#94a3b8',font:{size:10}}}},
+  scales:{x:{ticks:{color:'#475569'},grid:{color:'rgba(255,255,255,.04)'}},
+          y:{ticks:{color:'#475569'},grid:{color:'rgba(255,255,255,.04)'}}},
+};
+let cTimeline,cTypes,cProfiles,cPhases;
+
+async function loadCharts(){
+  const [tl,at,ap,ph] = await Promise.all([
+    fetch('/api/timeline').then(r=>r.json()),
+    fetch('/api/attack_types').then(r=>r.json()),
+    fetch('/api/attacker_types').then(r=>r.json()),
+    fetch('/api/attack_phases').then(r=>r.json()),
+  ]);
+
+  // Timeline bar
+  if(cTimeline) cTimeline.destroy();
+  cTimeline = new Chart(qs('chart-timeline').getContext('2d'),{
+    type:'bar',
+    data:{labels:tl.map(d=>d.day.slice(5)),
+          datasets:[{label:'Sessions',data:tl.map(d=>d.cnt),
+            backgroundColor:'rgba(59,130,246,.55)',borderColor:'#3b82f6',
+            borderWidth:1,borderRadius:4}]},
+    options:{...CHART_OPTS,responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false}}},
+  });
+
+  // Attack types doughnut
+  const colors=['#ef4444','#f97316','#3b82f6','#a855f7','#22c55e','#06b6d4','#eab308'];
+  if(cTypes) cTypes.destroy();
+  cTypes = new Chart(qs('chart-types').getContext('2d'),{
+    type:'doughnut',
+    data:{labels:at.map(d=>d.primary_type.replace(/_/g,' ')),
+          datasets:[{data:at.map(d=>d.cnt),backgroundColor:colors,borderWidth:2,borderColor:'#0d1526'}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'60%',
+      plugins:{legend:{position:'right',labels:{color:'#94a3b8',font:{size:9},boxWidth:10}}}},
+  });
+
+  // Attacker profiles horizontal bar
+  const pColors={automated_bot:'#ef4444',script_kiddie:'#f97316',experienced_human:'#a855f7'};
+  if(cProfiles) cProfiles.destroy();
+  cProfiles = new Chart(qs('chart-profiles').getContext('2d'),{
+    type:'bar',
+    data:{labels:ap.map(d=>d.attacker_type.replace(/_/g,' ')),
+          datasets:[{data:ap.map(d=>d.cnt),
+            backgroundColor:ap.map(d=>pColors[d.attacker_type]||'#64748b')+'55',
+            borderColor:ap.map(d=>pColors[d.attacker_type]||'#64748b'),
+            borderWidth:1,borderRadius:4}]},
+    options:{...CHART_OPTS,responsive:true,maintainAspectRatio:false,indexAxis:'y',
+      plugins:{legend:{display:false}}},
+  });
+
+  // Attack phases
+  const phColors={'reconnaissance':'#06b6d4','exploitation':'#f97316','post_compromise':'#ef4444'};
+  if(cPhases) cPhases.destroy();
+  cPhases = new Chart(qs('chart-phases').getContext('2d'),{
+    type:'bar',
+    data:{labels:ph.map(d=>d.attack_phase.replace(/_/g,' ')),
+          datasets:[{data:ph.map(d=>d.cnt),
+            backgroundColor:ph.map(d=>(phColors[d.attack_phase]||'#64748b')+'55'),
+            borderColor:ph.map(d=>phColors[d.attack_phase]||'#64748b'),
+            borderWidth:1,borderRadius:4}]},
+    options:{...CHART_OPTS,responsive:true,maintainAspectRatio:false,indexAxis:'y',
+      plugins:{legend:{display:false}}},
+  });
+}
+
+// ─── Leaflet Map ──────────────────────────────────────────────────────────────
+let map, markerLayer;
+function initMap(){
+  map = L.map('attack-map',{zoomControl:true,scrollWheelZoom:true});
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
+    attribution:'© CartoDB',maxZoom:19}).addTo(map);
+  map.setView([20,0],2);
+  markerLayer = L.layerGroup().addTo(map);
+  loadMapMarkers();
+}
+
+async function loadMapMarkers(){
+  const markers = await (await fetch('/api/map_markers')).json();
+  markerLayer.clearLayers();
+  markers.forEach(m=>{
+    const isJordan = m.country_code==='JO';
+    const c = m.max_risk==='High'?'#ef4444':m.max_risk==='Medium'?'#f97316':'#22c55e';
+    const r = Math.min(5+m.attack_count*1.5,20);
+    const circle = L.circleMarker([m.latitude,m.longitude],{
+      radius:r,fillColor:isJordan?'#f59e0b':c,
+      color:isJordan?'#fef3c7':'#fff',weight:isJordan?2:1,
+      opacity:1,fillOpacity:.8});
+    circle.bindPopup(`<div style="font-family:system-ui;min-width:160px">
+      <b>${flagEmoji(m.country_code)} ${m.country}</b><br>
+      <b>IP:</b> ${m.ip_address}<br>
+      <b>City:</b> ${m.city||'—'}<br>
+      <b>Profile:</b> ${(m.attacker_type||'unknown').replace(/_/g,' ')}<br>
+      <b>Attacks:</b> ${m.attack_count} · <b>Risk:</b> ${m.max_risk}
+    </div>`);
+    markerLayer.addLayer(circle);
+  });
+  if(!markers.length){
+    L.circleMarker([31.9539,35.9106],{radius:10,fillColor:'#f59e0b',
+      color:'#fef3c7',weight:2,opacity:1,fillOpacity:.9})
+      .bindPopup('<b>🇯🇴 Jordan — Demo</b><br><small>Connect via SSH to generate real data</small>')
+      .addTo(map);
+  }
+}
+
+// ─── Session Detail Modal ─────────────────────────────────────────────────────
+async function openSession(id){
+  const modal = qs('session-modal');
+  modal.classList.add('show');
+  qs('modal-title').textContent = `Session #${id}`;
+  qs('modal-body').innerHTML = '<div class="empty"><div class="ei">⏳</div>Loading…</div>';
+
+  const data = await (await fetch(`/api/session/${id}/detail`)).json();
+  const s = data.session || {};
+  const a = data.attack  || {};
+  const cmds = data.commands || [];
+
+  let evList = [];
+  try{ evList = JSON.parse(a.behavior_evidence||'[]') }catch(e){}
+  let atypes = [];
+  try{ atypes = Array.isArray(a.attack_types)?a.attack_types:JSON.parse(a.attack_types||'[]') }catch(e){}
+
+  const narrative = a.ai_narrative||'Analysis pending…';
+  const recs = (a.recommendations||'').split('\n').filter(Boolean);
+  const cmdLines = cmds.map(c=>{
+    let types=[];try{types=JSON.parse(c.attack_types||'[]')}catch(e){}
+    const t=types[0]||'unknown';
+    return `<div class="cmd-replay-line"><span class="cmd-prompt">zarqa@ubuntu-server:~$ </span><span class="cmd-${t}">${escHtml(c.command)}</span></div>`;
+  }).join('');
+
+  const llmTag = a.llm_provider && a.llm_provider!=='fallback'
+    ? `<span style="background:rgba(59,130,246,.15);color:var(--blue2);font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px;margin-left:6px">${a.llm_provider.toUpperCase()}</span>`
+    : '<span style="background:rgba(100,116,139,.15);color:#94a3b8;font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px;margin-left:6px">RULE-BASED</span>';
+
+  qs('modal-body').innerHTML = `
+    <div class="modal-grid">
+      <div class="modal-card"><div class="modal-card-label">IP Address</div><div class="modal-card-value mono">${s.ip_address||'—'}</div></div>
+      <div class="modal-card"><div class="modal-card-label">Location</div><div class="modal-card-value">${flagEmoji(s.country_code)} ${s.country||'Unknown'}${s.city?`, ${s.city}`:''}</div></div>
+      <div class="modal-card"><div class="modal-card-label">Attacker Profile</div><div class="modal-card-value">${profileBadge(a.attacker_type||s.attacker_type)}</div></div>
+      <div class="modal-card"><div class="modal-card-label">Attack Phase</div><div class="modal-card-value" style="color:var(--orange)">${(a.attack_phase||s.attack_phase||'—').replace(/_/g,' ')}</div></div>
+      <div class="modal-card"><div class="modal-card-label">Risk Level</div><div class="modal-card-value">${riskBadge(a.risk_level)} <span style="color:var(--muted);font-size:11px">score ${a.risk_score||0}</span></div></div>
+      <div class="modal-card"><div class="modal-card-label">Duration / Commands</div><div class="modal-card-value">${((s.duration_sec||0)/60).toFixed(1)}m · ${cmds.length} cmds</div></div>
+      <div class="modal-card"><div class="modal-card-label">Speed</div><div class="modal-card-value mono">${(s.cmd_per_min||0).toFixed(1)} cmds/min</div></div>
+      <div class="modal-card"><div class="modal-card-label">Automation Score</div><div class="modal-card-value" style="color:${(s.automation_score||0)>60?'var(--red)':'var(--green)'}">${(s.automation_score||0).toFixed(0)}/100</div></div>
+    </div>
+
+    <div class="ai-narrative">
+      <div class="ai-narrative-label">🤖 AI Analysis ${llmTag}</div>
+      ${escHtml(narrative)}
+    </div>
+
+    ${atypes.length?`<div style="margin-bottom:12px"><div class="modal-card-label" style="font-size:10px;color:var(--muted);margin-bottom:6px">ATTACK TYPES DETECTED</div><div style="display:flex;gap:6px;flex-wrap:wrap">${atypes.map(t=>typeBadge(t)).join('')}</div></div>`:''}
+
+    ${evList.length?`
+    <div class="evidence-list">
+      <div class="modal-card-label" style="font-size:10px;color:var(--muted);margin-bottom:4px">BEHAVIORAL EVIDENCE</div>
+      ${evList.map(e=>`<div class="evidence-item">${escHtml(e)}</div>`).join('')}
+    </div>`:''}
+
+    ${recs.length?`
+    <div class="rec-list" style="margin-bottom:14px">
+      <div class="modal-card-label" style="font-size:10px;color:var(--muted);margin-bottom:6px">SECURITY RECOMMENDATIONS (EVIDENCE-BASED)</div>
+      ${recs.map(r=>`<div class="rec-item">${escHtml(r)}</div>`).join('')}
+    </div>`:''}
+
+    <div>
+      <div class="modal-card-label" style="font-size:10px;color:var(--muted);margin-bottom:6px">COMMAND REPLAY (${cmds.length} commands)</div>
+      <div class="cmd-replay">${cmdLines||'<div class="empty" style="padding:12px">No commands recorded</div>'}</div>
+    </div>
+  `;
+}
+
+function closeModal(e){
+  if(e.target===qs('session-modal')) qs('session-modal').classList.remove('show');
+}
+
+// ─── Live Event Feed ──────────────────────────────────────────────────────────
+const tickerEvents = [];
+let liveEventCount = 0;
+
+function addLiveEvent(type, payload){
+  liveEventCount++;
+  const feed = qs('live-feed');
+  if(feed.firstElementChild?.classList.contains('empty')) feed.innerHTML='';
+
+  const dot = type==='live_alert'?'🚨':type==='new_connection'?'🔗':type==='session_end'?'✓':'⌨️';
+  const typeClass = type==='live_alert'?'ltype-alert':type==='new_connection'?'ltype-conn':
+                    type==='session_end'?'ltype-end':'ltype-command';
+  const typeName  = type.replace(/_/g,' ');
+
+  let bodyHtml = '';
+  if(type==='command'){
+    const scoreHtml = payload.running_score>=10
+      ? `<span class="score-pill">score ${payload.running_score}</span>`
+      : payload.running_score>=5
+      ? `<span class="score-pill med">score ${payload.running_score}</span>`
+      : `<span class="score-pill low">score ${payload.running_score}</span>`;
+    bodyHtml = `<div class="live-evt-cmd">${escHtml(payload.command||'')}${scoreHtml}</div>
+                <div class="live-evt-meta">${payload.ip||''} · ${payload.country||''} · delay ${(payload.delay_sec||0).toFixed(1)}s</div>`;
+  } else if(type==='live_alert'){
+    bodyHtml = `<div class="live-evt-cmd" style="color:var(--red)">⚠ HIGH RISK — score ${payload.running_score}</div>
+                <div class="live-evt-meta">${payload.ip||''} (${payload.country||''}) · ${escHtml(payload.trigger_cmd||'')}</div>`;
+  } else if(type==='new_connection'){
+    bodyHtml = `<div class="live-evt-cmd">New SSH connection</div>
+                <div class="live-evt-meta">${payload.ip||''} · port ${payload.port||''}</div>`;
+  } else if(type==='session_end'){
+    bodyHtml = `<div class="live-evt-cmd">Session ended — ${payload.cmd_count||0} commands · ${payload.duration||0}s</div>
+                <div class="live-evt-meta">${payload.ip||''} · ${payload.country||''}</div>`;
+  }
+
+  const el = document.createElement('div');
+  el.className = 'live-evt';
+  el.innerHTML = `<span class="live-evt-type ${typeClass}">${dot} ${typeName}</span>
+                  <div class="live-evt-body">${bodyHtml}</div>`;
+  feed.prepend(el);
+
+  // Limit to 80 items
+  while(feed.children.length > 80) feed.lastElementChild?.remove();
+
+  // Ticker
+  const cls = type==='live_alert'?'high':type==='new_connection'?'conn':'';
+  tickerEvents.push(`<span class="ticker-evt ${cls}">${new Date().toLocaleTimeString('en-GB',{hour12:false})} · ${payload.ip||''} (${payload.country||''}) · ${type.replace(/_/g,' ')}</span>`);
+  updateTicker();
+
+  if(type==='live_alert'){
+    toast(`⚠ Live Alert: score ${payload.running_score} from ${payload.ip}`, 'error', 7000);
+  }
+}
+
+function updateTicker(){
+  const evts = tickerEvents.slice(-20);
+  const doubled = [...evts,...evts];
+  qs('ticker-inner').innerHTML = doubled.map(e=>e).join('');
+}
+
+function clearFeed(){
+  qs('live-feed').innerHTML='<div class="empty"><div class="ei">⚡</div>Feed cleared</div>';
+}
+
+// ─── SSE: live stream ─────────────────────────────────────────────────────────
+function startLiveStream(){
+  const src = new EventSource('/api/live_stream');
+  src.onmessage = (e)=>{
+    try{
+      const {event_type, payload} = JSON.parse(e.data);
+      addLiveEvent(event_type, payload);
+    }catch(ex){}
+  };
+  src.onerror = ()=>{};
+}
+
+// ─── SSE: stats refresh ───────────────────────────────────────────────────────
+function startStatsStream(){
+  const src = new EventSource('/api/stream');
+  src.onmessage = (e)=>{
+    try{
+      const d = JSON.parse(e.data);
+      if(d.stats){
+        qs('kpi-total').textContent    = d.stats.total_sessions||'0';
+        qs('kpi-ips').textContent      = d.stats.unique_ips||'0';
+        qs('kpi-countries').textContent= d.stats.countries||'0';
+        qs('kpi-high').textContent     = d.stats.high_risk||'0';
+        qs('kpi-bots').textContent     = d.stats.bots_detected||'0';
+        qs('kpi-alerts').textContent   = d.stats.unread_alerts||'0';
+        qs('nav-alerts').textContent   = d.stats.unread_alerts||'0';
+        qs('g-active').textContent     = d.stats.active_sessions||'0';
+        qs('g-total-cmd').textContent  = d.stats.total_commands||'0';
+        updateGauge(d.stats.high_risk||0,d.stats.medium_risk||0,d.stats.total_sessions||0);
+      }
+    }catch(ex){}
+  };
+  src.onerror = ()=>{};
+}
+
+// ─── PDF Report ───────────────────────────────────────────────────────────────
+async function generateReport(){
+  toast('⏳ Generating PDF report…','info');
+  const r = await fetch('/api/report/generate',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
+  const d = await r.json();
+  if(d.url){toast('✅ Report ready — downloading…','success');window.location.href=d.url;}
+  else toast('❌ '+d.error,'error');
+}
+
+// ─── Refresh ──────────────────────────────────────────────────────────────────
+function refreshAll(){
+  loadStats();loadSessions();loadCountries();loadAlerts();
+  loadTopAttackers();loadCharts();loadMapMarkers();
+  toast('↻ Dashboard refreshed','ok',2000);
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded',()=>{
+  loadStats(); loadSessions(); loadCountries(); loadAlerts();
+  loadTopAttackers(); loadCharts(); initMap();
+  startLiveStream(); startStatsStream();
+  setInterval(()=>{loadSessions();loadCountries();loadAlerts();loadTopAttackers();}, 30000);
+  setInterval(loadCharts, 60000);
+});
+</script>
+</body>
+</html>
